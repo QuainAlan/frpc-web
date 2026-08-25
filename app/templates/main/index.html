@@ -2468,6 +2468,15 @@
                     <div class="field-caption">回源端口</div>
                   </div>
                 </div>
+                <div class="form-group mt-2 http2https-field" id="modalHttp2HttpsGroup" style="display: none;">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="modalEnableHttp2Https">
+                    <label class="form-check-label" for="modalEnableHttp2Https">
+                      开启后端 HTTPS 转换 (http2https 插件)
+                    </label>
+                    <div class="field-caption">用于反代 PVE、群晖等内网强制 HTTPS 的服务，防止 301 重定向死循环</div>
+                  </div>
+                </div>
               </section>
 
               <section class="form-section">
@@ -3059,10 +3068,14 @@ function toggleFields() {
     const type = document.getElementById('modalClientType').value;
     const domainFields = document.querySelectorAll('.domain-field');
     const remotePortField = document.querySelector('.remote-port-field');
+    const http2httpsGroup = document.getElementById('modalHttp2HttpsGroup');
     
     // 重置所有字段的显示状态
     domainFields.forEach(field => field.style.display = 'none');
     remotePortField.style.display = 'flex';
+    if (http2httpsGroup) {
+        http2httpsGroup.style.display = (type === 'http') ? 'block' : 'none';
+    }
     
     // 根据类型显示相应字段
     if (type === 'http' || type === 'https') {
@@ -3097,12 +3110,20 @@ function submitClientModal() {
         return false;
     }
     
+    const enableHttp2Https = document.getElementById('modalEnableHttp2Https') && document.getElementById('modalEnableHttp2Https').checked;
     const cfg = {
         name: document.getElementById('modalClientName').value,
-        type: type,
-        localIP: localIP,
-        localPort: parseInt(localPort)
+        type: type
     };
+    if (type === 'http' && enableHttp2Https) {
+        cfg.plugin = {
+            type: 'http2https',
+            localAddr: `${localIP}:${localPort}`
+        };
+    } else {
+        cfg.localIP = localIP;
+        cfg.localPort = parseInt(localPort);
+    }
     
     // 根据类型添加可选字段
     if (type === 'tcp' || type === 'udp') {
@@ -3172,11 +3193,24 @@ function renderClientTable() {
             `<span class="status-badge online"><span class="status-dot online"></span>已启用</span>` :
             `<span class="status-badge offline"><span class="status-dot offline"></span>已禁用</span>`;
         
+        let localIP = cfg.localIP;
+        let localPort = cfg.localPort;
+        let isHttp2Https = false;
+        if (cfg.plugin && cfg.plugin.type === 'http2https') {
+            isHttp2Https = true;
+            if (cfg.plugin.localAddr) {
+                const parts = String(cfg.plugin.localAddr).split(':');
+                localIP = parts[0] || localIP;
+                localPort = parts[1] || localPort;
+            }
+        }
+        const typeBadgeText = isHttp2Https ? 'HTTP → HTTPS' : (cfg.type ? cfg.type.toUpperCase() : '-');
+
         tbody.innerHTML += `<tr>
             <td><strong>${cfg.name || '-'}</strong></td>
-            <td><span class="proxy-type-badge ${typeClass}">${cfg.type ? cfg.type.toUpperCase() : '-'}</span></td>
-            <td><code>${fmtSensitive(cfg.localIP)}</code></td>
-            <td><code>${fmtSensitive(cfg.localPort)}</code></td>
+            <td><span class="proxy-type-badge ${typeClass}">${typeBadgeText}</span></td>
+            <td><code>${fmtSensitive(localIP)}</code></td>
+            <td><code>${fmtSensitive(localPort)}</code></td>
             <td><code>${hideSensitive ? fmtSensitive(cfg.remotePort) : (cfg.remotePort ?? '-')}</code></td>
             <td>${(function(){ const joined = cfg.customDomains ? cfg.customDomains.join(', ') : ''; return hideSensitive ? maskSensitive(joined) : (joined || '-'); })()}</td>
             <td><code>${cfg.route || '-'}</code></td>
@@ -3448,8 +3482,23 @@ function openClientModal(editIdx = null) {
         const cfg = clientConfigs[editIdx];
         document.getElementById('modalClientName').value = cfg.name || '';
         document.getElementById('modalClientType').value = cfg.type || 'tcp';
-        document.getElementById('modalClientLocalIP').value = cfg.localIP || '';
-        document.getElementById('modalClientLocalPort').value = cfg.localPort || '';
+        
+        let localIP = cfg.localIP || '';
+        let localPort = cfg.localPort || '';
+        let hasHttp2Https = false;
+        if (cfg.plugin && cfg.plugin.type === 'http2https') {
+            hasHttp2Https = true;
+            if (cfg.plugin.localAddr) {
+                const parts = String(cfg.plugin.localAddr).split(':');
+                localIP = parts[0] || '';
+                localPort = parts[1] || '';
+            }
+        }
+        document.getElementById('modalClientLocalIP').value = localIP;
+        document.getElementById('modalClientLocalPort').value = localPort;
+        if (document.getElementById('modalEnableHttp2Https')) {
+            document.getElementById('modalEnableHttp2Https').checked = hasHttp2Https;
+        }
         document.getElementById('modalClientRemotePort').value = cfg.remotePort || '';
         document.getElementById('modalClientDomains').value = cfg.customDomains ? cfg.customDomains.join(',') : '';
         document.getElementById('modalClientRoute').value = cfg.route || '';

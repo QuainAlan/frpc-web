@@ -210,7 +210,19 @@ class InputValidator:
                     continue
                 
                 # 验证必需字段
-                required_proxy_fields = ['name', 'type', 'localIP', 'localPort']
+                has_plugin = isinstance(proxy.get('plugin'), dict)
+                if has_plugin:
+                    plugin = proxy['plugin']
+                    if 'type' not in plugin or not plugin['type']:
+                        errors.append(f"代理配置 {i+1} plugin 缺少 type")
+                    if 'localAddr' in plugin:
+                        addr_parts = str(plugin['localAddr']).rsplit(':', 1)
+                        if len(addr_parts) != 2 or not InputValidator.validate_host_or_ip(addr_parts[0]) or not InputValidator.validate_port(addr_parts[1]):
+                            errors.append(f"代理配置 {i+1} plugin.localAddr 格式无效 (应为 host:port)")
+                    required_proxy_fields = ['name', 'type']
+                else:
+                    required_proxy_fields = ['name', 'type', 'localIP', 'localPort']
+
                 if proxy.get('type') in ['tcp', 'udp']:
                     required_proxy_fields.append('remotePort')
                 for field in required_proxy_fields:
@@ -218,7 +230,7 @@ class InputValidator:
                         errors.append(f"代理配置 {i+1} 缺少字段: {field}")
                 
                 # 验证代理类型
-                if 'type' in proxy and proxy['type'] not in ['tcp', 'udp', 'http', 'https']:
+                if 'type' in proxy and proxy['type'] not in ['tcp', 'udp', 'http', 'https', 'tcpmux', 'stcp', 'sudp', 'xtcp']:
                     errors.append(f"代理配置 {i+1} 类型无效: {proxy['type']}")
                 
                 # 验证端口
